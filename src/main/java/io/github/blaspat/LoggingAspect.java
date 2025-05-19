@@ -64,11 +64,10 @@ import java.util.stream.Collectors;
 public class LoggingAspect {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
-    @Value("logging.excluded-path")
+    @Value("logging.excluded-paths")
     private String EXCLUDED_PATH;
 
     private final DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
-    private final Environment environment;
 
     private final ObjectWriter om = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
@@ -82,8 +81,7 @@ public class LoggingAspect {
             .registerTypeAdapter(Instant.class, new ISOInstantAdapter())
             .create();
 
-    public LoggingAspect(Environment environment) {
-        this.environment = environment;
+    public LoggingAspect() {
         this.df.setTimeZone(TimeZone.getTimeZone("UTC"));
     }
 
@@ -213,20 +211,16 @@ public class LoggingAspect {
             String parameterMap = getParameterMap(request);
             String body = getBodyData(obj);
 
-            String logRequest = "=== START-REQUEST ===";
-            logRequest += "\n\t[" + request.getMethod() + "] - [" + request.getRequestURI() + "]";
-            logRequest += "\n\tHEADERS" + "\t : " + generateHeaderJson(request);
+            String logRequest = "REQUEST";
+            logRequest += "\t[" + request.getMethod() + "] - [" + request.getRequestURI() + "]";
+            logRequest += "\tHEADERS" + "\t : " + generateHeaderJson(request);
             if (StringUtils.isNotBlank(parameterMap)) {
-                logRequest += "\n\tPARAMETER_MAP" + "\t : " + parameterMap;
+                logRequest += "\tPARAMETER_MAP" + "\t : " + parameterMap;
             }
             if (StringUtils.isNotBlank(body)) {
-                logRequest += "\n\tREQUEST_BODY" + "\t : " + body;
+                logRequest += "\tREQUEST_BODY" + "\t : " + body;
             }
-            logRequest += "\n=== END-REQUEST ===";
-
-            if (Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
-                logRequest = logRequest.replace("\n", "");
-            }
+            logRequest += "END-REQUEST";
 
             logger.debug(logRequest);
         } catch (Exception ex) {
@@ -241,18 +235,14 @@ public class LoggingAspect {
             }
             String body = getBodyData(obj);
 
-            String logResponse = "=== START-RESPONSE ===";
-            logResponse += "\n\t[" + request.getMethod() + "] - [" + request.getRequestURI() + "]";
-            logResponse += "\n\tELAPSED_TIME" + "\t : " + (System.currentTimeMillis() - startTime) + " ms";
-            logResponse += "\n\tRESPONSE_BODY (" + responseCode + ")";
+            String logResponse = "RESPONSE";
+            logResponse += "\t[" + request.getMethod() + "] - [" + request.getRequestURI() + "]";
+            logResponse += "\tELAPSED_TIME" + "\t : " + (System.currentTimeMillis() - startTime) + " ms";
+            logResponse += "\tRESPONSE_BODY (" + responseCode + ")";
             if (StringUtils.isNotBlank(body)) {
                 logResponse += "\t : " + body;
             }
-            logResponse += "\n=== END-RESPONSE ===";
-
-            if (Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
-                logResponse = logResponse.replace("\n", "");
-            }
+            logResponse += "\tEND-RESPONSE";
 
             logger.debug(logResponse);
         } catch (Exception ex) {
