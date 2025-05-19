@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <appender name="JSON" class="io.github.blaspat.logback.JsonAppender"/>
+
+    <!-- override level from application.yml-->
+    <root level="OFF">
+        <appender-ref ref="JSON"/>
+    </root>
+
+    <!-- update logger name, override level from application.yml -->
+    <logger name="com.example.package" level="OFF" additivity="false">
+        <appender-ref ref="JSON"/>
+    </logger>
+
+    <!--  do not change / update level  -->
+    <logger name="io.github.blaspat" level="DEBUG" additivity="false">
+        <appender-ref ref="JSON"/>
+    </logger>
+</configuration>

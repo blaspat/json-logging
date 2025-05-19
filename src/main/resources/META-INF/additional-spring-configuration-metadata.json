@@ -1,0 +1,10 @@
+{
+  "properties": [
+    {
+      "name": "logging.excluded-path",
+      "type": "java.lang.String",
+      "defaultValue": "",
+      "description": "Ignored path for logging. Support multiple value, separated by comma."
+    }
+  ]
+}
