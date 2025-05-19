@@ -2,8 +2,12 @@ JSON Logging
 ===========================
 
 ## Overview
-JSON Logging library with AOP mechanism
+A JSON Logging library with an AOP mechanism. Useful if you want to ingest your logs into ELK or another logging system that supports JSON format.
 
+## Key Features:
+* Logs API request and response
+* Logs error stack traces
+  
 Support **Java 8 or later**
 
 ## Updates
