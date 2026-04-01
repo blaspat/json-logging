@@ -16,14 +16,12 @@
 
 package io.github.blaspat;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
-import com.google.gson.FieldNamingPolicy;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import io.github.blaspat.adapter.ISODateAdapter;
-import io.github.blaspat.adapter.ISOInstantAdapter;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -33,12 +31,8 @@ import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -46,244 +40,203 @@ import org.springframework.web.util.ContentCachingRequestWrapper;
 
 import javax.servlet.http.HttpServletRequest;
 import java.lang.reflect.Parameter;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
-import java.util.Date;
-import java.util.Enumeration;
-import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.TimeZone;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Aspect
-@Component
 public class LoggingAspect {
-    private final Logger logger = LoggerFactory.getLogger(this.getClass());
+    private final Logger logger = LoggerFactory.getLogger(getClass());
 
-    @Value("logging.excluded-paths")
-    private String EXCLUDED_PATH;
+    private final ObjectMapper objectMapper;
 
-    private final DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+    /** Sensitive parameter names (case-insensitive) that should be redacted. */
+    private static final Set<String> SENSITIVE_PARAMS = new HashSet<>(Arrays.asList(
+            "password", "passwd", "secret", "token", "accesstoken", "access_token",
+            "refreshtoken", "refresh_token", "apikey", "api_key", "auth", "credential",
+            "creditcard", "credit_card", "cvv", "ssn", "pin"
+    ));
 
-    private final ObjectWriter om = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            .setDateFormat(df)
-            .writer();
-
-    private final Gson gson = new GsonBuilder().disableHtmlEscaping()
-            .serializeNulls()
-            .setFieldNamingPolicy(FieldNamingPolicy.IDENTITY)
-            .registerTypeAdapter(Date.class, new ISODateAdapter())
-            .registerTypeAdapter(Instant.class, new ISOInstantAdapter())
-            .create();
+    private static final DateTimeFormatter ISO_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").withZone(ZoneOffset.UTC);
 
     public LoggingAspect() {
-        this.df.setTimeZone(TimeZone.getTimeZone("UTC"));
+        this.objectMapper = new ObjectMapper()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
+                .setTimeZone(java.util.TimeZone.getTimeZone("UTC"))
+                .registerModule(new JavaTimeModule());
     }
 
     @Around("@within(org.springframework.web.bind.annotation.RestController)")
     public Object logRequestResponse(ProceedingJoinPoint joinPoint) throws Throwable {
         long start = System.currentTimeMillis();
-        ContentCachingRequestWrapper request = new ContentCachingRequestWrapper(((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest());
-        // log request
+        HttpServletRequest request = getRequest();
+
         setMDC(request);
+
+        // Log request
         logRequest(request, getRequestBody(joinPoint));
 
-        // proceed with the method execution
+        // Execute the controller method
         Object result = joinPoint.proceed();
 
-        Class<?> clazz = ResponseEntity.class;
-        if (clazz.isInstance(result)) {
+        // Log response
+        if (result instanceof ResponseEntity) {
             ResponseEntity<?> responseEntity = (ResponseEntity<?>) result;
-
-            // handling non json response
-            if (Objects.nonNull(responseEntity.getHeaders())) {
-                if (Objects.nonNull(responseEntity.getHeaders().getContentType())) {
-                    if (responseEntity.getHeaders().getContentType().equals(MediaType.APPLICATION_JSON)
-                            || responseEntity.getHeaders().getContentType().equals(MediaType.APPLICATION_JSON_UTF8)
-                    ) {
-                        logResponse(request, responseEntity.getStatusCodeValue(), responseEntity.getBody(), start);
-                    } else {
-                        logResponse(request, responseEntity.getStatusCodeValue(), responseEntity.getHeaders().getContentType() + " content", start);
-                    }
-                }
-            } else {
-                // log response
-                logResponse(request, 200, result, start);
-            }
+            MediaType contentType = responseEntity.getHeaders().getContentType();
+            boolean isJson = MediaType.APPLICATION_JSON.isCompatibleWith(contentType);
+            Object body = isJson ? responseEntity.getBody() : contentType + " content";
+            logResponse(request, responseEntity.getStatusCodeValue(), body, start);
         } else {
-            // log response
             logResponse(request, 200, result, start);
         }
 
-        // clear MDC
         MDC.clear();
         return result;
     }
 
     @Around("@within(org.springframework.web.bind.annotation.RestControllerAdvice)")
     public Object logErrorResponse(ProceedingJoinPoint joinPoint) throws Throwable {
-        ContentCachingRequestWrapper request = new ContentCachingRequestWrapper(((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest());
-        // proceed with the method execution
+        HttpServletRequest request = getRequest();
         Object result = joinPoint.proceed();
 
-        // log response
-        Class<?> clazz = ResponseEntity.class;
-        if (clazz.isInstance(result)) {
+        if (result instanceof ResponseEntity) {
             ResponseEntity<?> responseEntity = (ResponseEntity<?>) result;
             logResponse(request, responseEntity.getStatusCodeValue(), responseEntity.getBody(), 0);
         } else {
             logResponse(request, 500, result, 0);
         }
 
-        // clear MDC
         MDC.clear();
         return result;
     }
 
+    private HttpServletRequest getRequest() {
+        return ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
+    }
 
     private void setMDC(HttpServletRequest request) {
         try {
-            String correlationId = request.getHeader("x-correlation-id");
-            if (StringUtils.isBlank(correlationId)) {
-                correlationId = request.getHeader("x-request-id") != null
-                        ? request.getHeader("x-request-id")
-                        : UUID.randomUUID().toString();
-            }
+            String correlationId = StringUtils.defaultString(
+                    StringUtils.defaultString(request.getHeader("x-correlation-id"), request.getHeader("x-request-id")),
+                    UUID.randomUUID().toString()
+            );
 
-            MDC.put("x-correlation-id", correlationId);
-
-            String userAgent = request.getHeader(HttpHeaders.USER_AGENT);
-
-            MDC.put(HttpHeaders.USER_AGENT, userAgent);
-
-            String clientIp = request.getHeader("x-original-forwarded-for");
-            if (StringUtils.isBlank(clientIp)) {
-                clientIp = request.getRemoteAddr();
-            }
-
-            MDC.put("x-original-forwarded-for", clientIp);
+            MDC.put("correlationId", correlationId);
+            MDC.put("userAgent", StringUtils.defaultString(request.getHeader("user-agent"), ""));
+            MDC.put("clientIp", StringUtils.defaultString(
+                    request.getHeader("x-original-forwarded-for"),
+                    request.getRemoteAddr()
+            ));
         } catch (Exception e) {
-            logger.error("Failed-RequestInterceptor", e);
+            logger.error("Failed to set MDC", e);
         }
     }
 
-    private String generateHeaderJson(HttpServletRequest request) {
-        String userAgent = MDC.get(HttpHeaders.USER_AGENT);
-        String correlationId = MDC.get("x-correlation-id");
-        String clientIp = MDC.get("x-original-forwarded-for");
-
-        Map<String, String> allHeaders = new HashMap<>();
-        Enumeration<String> headerNames = request.getHeaderNames();
-
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            String headerValue = request.getHeader(headerName);
-            allHeaders.put(headerName, headerValue);
-        }
-
-        logger.trace("All Headers: {}", gson.toJson(allHeaders));
-
-        HashMap<String, String> headers = new HashMap<>();
-        headers.put(HttpHeaders.USER_AGENT.toLowerCase(), userAgent);
-        headers.put("x-correlation-id", correlationId);
-        headers.put("client-ip", clientIp);
-
-        return gson.toJson(headers);
-    }
-
-    private String[] getExcludedPath() {
-        if (StringUtils.isNotBlank(EXCLUDED_PATH)) {
-            return EXCLUDED_PATH.split(",");
+    private String[] getExcludedPaths() {
+        String excluded = System.getProperty("logging.excluded-paths", "");
+        if (StringUtils.isNotBlank(excluded)) {
+            return excluded.split(",");
         }
         return new String[]{};
     }
 
-    private void logRequest(HttpServletRequest request, Object obj) {
+    private boolean isExcluded(String uri) {
+        return StringUtils.startsWithAny(uri, getExcludedPaths());
+    }
+
+    private void logRequest(HttpServletRequest request, Object body) {
         try {
-            if (StringUtils.startsWithAny(request.getRequestURI(), getExcludedPath())) {
+            if (isExcluded(request.getRequestURI())) {
                 return;
             }
-            String parameterMap = getParameterMap(request);
-            String body = getBodyData(obj);
 
-            String logRequest = "REQUEST";
-            logRequest += "\t[" + request.getMethod() + "] - [" + request.getRequestURI() + "]";
-            logRequest += "\tHEADERS" + "\t : " + generateHeaderJson(request);
-            if (StringUtils.isNotBlank(parameterMap)) {
-                logRequest += "\tPARAMETER_MAP" + "\t : " + parameterMap;
-            }
-            if (StringUtils.isNotBlank(body)) {
-                logRequest += "\tREQUEST_BODY" + "\t : " + body;
-            }
-            logRequest += "END-REQUEST";
+            Map<String, Object> logEntry = new LinkedHashMap<>();
+            logEntry.put("type", "REQUEST");
+            logEntry.put("method", request.getMethod());
+            logEntry.put("uri", request.getRequestURI());
+            logEntry.put("timestamp", ISO_FORMATTER.format(Instant.now()));
+            logEntry.put("correlationId", MDC.get("correlationId"));
+            logEntry.put("userAgent", MDC.get("userAgent"));
+            logEntry.put("clientIp", MDC.get("clientIp"));
 
-            logger.debug(logRequest);
-        } catch (Exception ex) {
-            logger.error("Failed-logRequest", ex);
+            Map<String, String> queryParams = getParameterMap(request);
+            if (!queryParams.isEmpty()) {
+                logEntry.put("queryParams", sanitize(queryParams));
+            }
+
+            if (body != null) {
+                logEntry.put("body", body);
+            }
+
+            logger.info(objectMapper.writeValueAsString(logEntry));
+        } catch (JsonProcessingException e) {
+            logger.error("Failed to log request", e);
         }
     }
 
-    private void logResponse(HttpServletRequest request, int responseCode, Object obj, long startTime) {
+    private void logResponse(HttpServletRequest request, int statusCode, Object body, long startTime) {
         try {
-            if (StringUtils.startsWithAny(request.getRequestURI(), EXCLUDED_PATH)) {
+            if (isExcluded(request.getRequestURI())) {
                 return;
             }
-            String body = getBodyData(obj);
 
-            String logResponse = "RESPONSE";
-            logResponse += "\t[" + request.getMethod() + "] - [" + request.getRequestURI() + "]";
-            logResponse += "\tELAPSED_TIME" + "\t : " + (System.currentTimeMillis() - startTime) + " ms";
-            logResponse += "\tRESPONSE_BODY (" + responseCode + ")";
-            if (StringUtils.isNotBlank(body)) {
-                logResponse += "\t : " + body;
+            Map<String, Object> logEntry = new LinkedHashMap<>();
+            logEntry.put("type", "RESPONSE");
+            logEntry.put("method", request.getMethod());
+            logEntry.put("uri", request.getRequestURI());
+            logEntry.put("timestamp", ISO_FORMATTER.format(Instant.now()));
+            logEntry.put("correlationId", MDC.get("correlationId"));
+            logEntry.put("status", statusCode);
+
+            if (startTime > 0) {
+                logEntry.put("elapsedMs", System.currentTimeMillis() - startTime);
             }
-            logResponse += "\tEND-RESPONSE";
 
-            logger.debug(logResponse);
-        } catch (Exception ex) {
-            logger.error("Failed-logResponse", ex);
+            if (body != null) {
+                logEntry.put("body", body);
+            }
+
+            logger.info(objectMapper.writeValueAsString(logEntry));
+        } catch (JsonProcessingException e) {
+            logger.error("Failed to log response", e);
         }
     }
 
-    private String getBodyData(Object obj) {
-        String body = "";
-        if (null != obj) {
-            if (obj instanceof String) {
-                body = (String) obj;
-            } else {
-                try {
-                    body = om.writeValueAsString(obj);
-                } catch (Exception ex) {
-                    body = gson.toJson(obj);
-                }
-            }
-        }
-        return body;
+    /**
+     * Returns a new map with sensitive parameter values redacted.
+     */
+    private Map<String, String> sanitize(Map<String, String> params) {
+        return params.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        e -> SENSITIVE_PARAMS.contains(e.getKey().toLowerCase()) ? "***REDACTED***" : e.getValue(),
+                        (a, b) -> a,
+                        LinkedHashMap::new
+                ));
     }
 
-    private String getParameterMap(HttpServletRequest request) {
-        String parameterMap = "";
-        if (null != request.getParameterMap() && request.getParameterMap().size() > 0) {
-            parameterMap = request.getParameterMap()
-                    .entrySet()
-                    .stream()
-                    .map((entry) -> {
-                        if (null == entry.getValue()) {
-                            return entry.getKey() + "=" + null;
-                        } else {
-                            return Arrays.stream(entry.getValue())
-                                    .map(val -> entry.getKey() + "=" + val)
-                                    .collect(Collectors.joining("&"));
-                        }
-                    })
-                    .collect(Collectors.joining("&"));
+    private Map<String, String> getParameterMap(HttpServletRequest request) {
+        Map<String, String> result = new LinkedHashMap<>();
+        Map<String, String[]> paramMap = request.getParameterMap();
+        if (paramMap == null || paramMap.isEmpty()) {
+            return result;
         }
-        return parameterMap;
+        paramMap.forEach((key, values) -> {
+            if (values != null && values.length > 0) {
+                result.put(key, values.length == 1 ? values[0] : Arrays.toString(values));
+            }
+        });
+        return result;
     }
 
     private Object getRequestBody(JoinPoint joinPoint) {
