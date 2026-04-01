@@ -20,13 +20,24 @@ import ch.qos.logback.core.ConsoleAppender;
 import ch.qos.logback.core.Layout;
 import ch.qos.logback.core.encoder.LayoutWrappingEncoder;
 
+/**
+ * A {@link ConsoleAppender} that outputs JSON-formatted log events.
+ *
+ * <p>Configure in {@code logback-spring.xml}:
+ * <pre>
+ * &lt;appender name="JSON" class="io.github.blaspat.logback.JsonAppender"/&gt;
+ * </pre>
+ *
+ * <p>The appender automatically creates a {@link JsonLayout} internally.
+ */
 public class JsonAppender<E> extends ConsoleAppender<E> {
+
     @Override
     public void start() {
+        @SuppressWarnings("unchecked")
         LayoutWrappingEncoder<E> encoder = new LayoutWrappingEncoder<>();
-        JsonLayout layout = new JsonLayout();
-        encoder.setLayout((Layout<E>) layout);
-
+        encoder.setLayout((Layout<E>) new JsonLayout());
+        encoder.setContext(getContext());
         setEncoder(encoder);
         super.start();
     }

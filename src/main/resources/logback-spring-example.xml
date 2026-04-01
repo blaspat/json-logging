@@ -1,22 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
-    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
 
-    <appender name="JSON" class="io.github.blaspat.logback.JsonAppender"/>
+    <!--
+      JSON Appender — configure as the appender for your root or package logger.
+      level="DEBUG" is intentionally low; control actual output via application.yml:
+        logging.level.root=INFO
+        logging.level.com.example.package=DEBUG
+    -->
+    <appender name="JSON" class="io.github.blaspat.logback.JsonAppender">
+        <encoder>
+            <layout class="io.github.blaspat.logback.JsonLayout"/>
+        </encoder>
+    </appender>
 
-    <!-- override level from application.yml-->
-    <root level="OFF">
-        <appender-ref ref="JSON"/>
-    </root>
+    <!--
+      Exclude noisy paths via system property (set in application.yml):
+        java -Dlogging.excluded-paths=/actuator/**,/health ...
+      Or configure directly below.
+    -->
 
-    <!-- update logger name, override level from application.yml -->
-    <logger name="com.example.package" level="OFF" additivity="false">
+    <!-- Application package — set your own package name -->
+    <logger name="com.example.package" level="DEBUG" additivity="false">
         <appender-ref ref="JSON"/>
     </logger>
 
-    <!--  do not change / update level  -->
+    <!-- json-logging library itself — always DEBUG -->
     <logger name="io.github.blaspat" level="DEBUG" additivity="false">
         <appender-ref ref="JSON"/>
     </logger>
+
+    <root level="INFO">
+        <appender-ref ref="JSON"/>
+    </root>
 </configuration>

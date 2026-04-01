@@ -1,10 +1,22 @@
 {
   "properties": [
     {
-      "name": "logging.excluded-path",
+      "name": "logging.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Enable or disable the json-logging auto-configuration."
+    },
+    {
+      "name": "logging.excluded-paths",
       "type": "java.lang.String",
       "defaultValue": "",
-      "description": "Ignored path for logging. Support multiple value, separated by comma."
+      "description": "Comma-separated list of URI patterns to exclude from logging. Supports Ant-style path patterns (e.g. /actuator/**,/health)."
+    },
+    {
+      "name": "logging.masking.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Enable automatic masking of sensitive values (passwords, tokens, etc.) in log output."
     }
   ]
 }

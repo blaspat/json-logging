@@ -16,41 +16,86 @@
 
 package io.github.blaspat.logback;
 
-import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.StackTraceElementProxy;
-import ch.qos.logback.contrib.jackson.JacksonJsonFormatter;
+import ch.qos.logback.core.LayoutBase;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.MDC;
 
-import java.util.Map;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 
-public class JsonLayout extends ch.qos.logback.contrib.json.classic.JsonLayout {
-    @Override
-    protected void addCustomDataToJsonMap(Map<String, Object> map, ILoggingEvent event) {
-        map.put("severity", event.getLevel().toInteger());
-        map.put("logId", MDC.get("x-correlation-id"));
-        map.put("logType", "JSON");
+/**
+ * Custom JSON {@link LayoutBase} for structured log output.
+ *
+ * <p>Output fields:
+ * <ul>
+ *   <li>{@code timestamp} — ISO-8601 UTC</li>
+ *   <li>{@code severity} — log level as integer</li>
+ *   <li>{@code message} — log message</li>
+ *   <li>{@code logger} — logger name</li>
+ *   <li>{@code thread} — thread name</li>
+ *   <li>{@code logType} — always "JSON"</li>
+ *   <li>{@code correlationId} — from MDC</li>
+ *   <li>{@code stackTrace} — only on ERROR</li>
+ * </ul>
+ */
+public class JsonLayout extends LayoutBase<ILoggingEvent> {
 
-        if (Level.ERROR == event.getLevel()) {
-            StackTraceElementProxy[] stackTraceElementProxyArray = event.getThrowableProxy().getStackTraceElementProxyArray();
-            if (null != stackTraceElementProxyArray && stackTraceElementProxyArray.length > 0) {
-                StringBuilder stackTraceBuilder = new StringBuilder();
-                for (StackTraceElementProxy stackTraceElementProxy : stackTraceElementProxyArray) {
-                    stackTraceBuilder.append(stackTraceElementProxy.toString()).append(System.lineSeparator());
-                }
-                map.put("stackTrace", stackTraceBuilder.toString());
-            }
-        }
+    private static final DateTimeFormatter ISO_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").withZone(ZoneOffset.UTC);
 
-        super.addCustomDataToJsonMap(map, event);
-    }
+    private final ObjectMapper objectMapper;
 
     public JsonLayout() {
-        setTimestampFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX");
-        setTimestampFormatTimezoneId("Asia/Jakarta");
-        setAppendLineSeparator(true);
-        JacksonJsonFormatter formatter = new JacksonJsonFormatter();
-        formatter.setPrettyPrint(false);
-        setJsonFormatter(formatter);
+        this.objectMapper = new ObjectMapper()
+                .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
+                .disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET)
+                .registerModule(new JavaTimeModule());
+    }
+
+    @Override
+    public String doLayout(ILoggingEvent event) {
+        StringWriter writer = new StringWriter(256);
+        try {
+            JsonGenerator gen = objectMapper.getFactory().createGenerator(writer);
+
+            gen.writeStartObject();
+            gen.writeStringField("timestamp", ISO_FORMATTER.format(Instant.ofEpochMilli(event.getTimeStamp())));
+            gen.writeNumberField("severity", event.getLevel().toInteger());
+            gen.writeStringField("message", event.getFormattedMessage());
+            gen.writeStringField("logger", event.getLoggerName());
+            gen.writeStringField("thread", event.getThreadName());
+            gen.writeStringField("logType", "JSON");
+            gen.writeStringField("correlationId", MDC.get("correlationId"));
+
+            if (event.getThrowableProxy() != null) {
+                gen.writeStringField("stackTrace", buildStackTrace(event));
+            }
+
+            gen.writeEndObject();
+            gen.flush();
+        } catch (IOException e) {
+            return "{\"message\":\"" + event.getFormattedMessage().replace("\"", "\\\"") + "\"}\n";
+        }
+
+        return writer.toString() + System.lineSeparator();
+    }
+
+    private String buildStackTrace(ILoggingEvent event) {
+        StringBuilder sb = new StringBuilder();
+        for (StackTraceElementProxy step : event.getThrowableProxy().getStackTraceElementProxyArray()) {
+            if (sb.length() > 0) {
+                sb.append("\n  ");
+            }
+            sb.append(step.getSTEAsString());
+        }
+        return sb.toString();
     }
 }

@@ -18,18 +18,24 @@ package io.github.blaspat;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.ComponentScan;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Configuration;
 
 import javax.annotation.PostConstruct;
 
-@ComponentScan
 @Configuration
+@ConditionalOnWebApplication
+@ConditionalOnClass(name = "org.springframework.web.bind.annotation.RestController")
+@ConditionalOnProperty(prefix = "logging", name = "enabled", havingValue = "true", matchIfMissing = true)
+@AutoConfigureAfter
 public class LoggingConfig {
-    private final Logger logger = LoggerFactory.getLogger(this.getClass());
+    private final Logger logger = LoggerFactory.getLogger(getClass());
 
     @PostConstruct
     private void init() {
-        logger.info("Running {} version {}", this.getClass().getPackage().getImplementationTitle(), this.getClass().getPackage().getImplementationVersion());
+        logger.info("json-logging is enabled");
     }
 }

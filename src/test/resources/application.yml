@@ -1,0 +1,6 @@
+logging:
+  enabled: true
+  excluded-paths: /health,/actuator/**
+  level:
+    root: INFO
+    io.github.blaspat: DEBUG
