@@ -19,6 +19,8 @@ package io.github.blaspat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -26,24 +28,29 @@ public class TestController {
 
     @GetMapping("/skip")
     public ResponseEntity<Map<String, String>> skip() {
-        return ResponseEntity.ok(Map.of("skipped", "true"));
+        return ResponseEntity.ok(Collections.singletonMap("skipped", "true"));
     }
 
     @PostMapping("/api/test")
     public ResponseEntity<Map<String, String>> test(@RequestBody Map<String, Object> body) {
         String name = (String) body.getOrDefault("name", "World");
-        return ResponseEntity.ok(Map.of("message", "Hello " + name));
+        Map<String, String> result = new HashMap<>();
+        result.put("message", "Hello " + name);
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/api/login")
     public ResponseEntity<Map<String, String>> login(
             @RequestParam String username,
             @RequestParam String password) {
-        return ResponseEntity.ok(Map.of("user", username, "status", "logged in"));
+        Map<String, String> result = new HashMap<>();
+        result.put("user", username);
+        result.put("status", "logged in");
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/api/test")
     public ResponseEntity<Map<String, String>> testGet() {
-        return ResponseEntity.ok(Map.of("status", "ok"));
+        return ResponseEntity.ok(Collections.singletonMap("status", "ok"));
     }
 }
