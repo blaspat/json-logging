@@ -29,7 +29,6 @@
 	</dependencyManagement>
 
 	<dependencies>
-		<!-- Spring Boot starters -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter</artifactId>
@@ -42,22 +41,16 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-aop</artifactId>
 		</dependency>
-
-		<!-- Logback JSON encoder (actively maintained, replaces unmaintained logback-contrib) -->
 		<dependency>
 			<groupId>net.logstash.logback</groupId>
 			<artifactId>logstash-logback-encoder</artifactId>
 			<version>7.4</version>
 		</dependency>
-
-		<!-- Apache Commons Lang -->
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
 			<version>3.12.0</version>
 		</dependency>
-
-		<!-- Test dependencies -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
@@ -82,10 +75,10 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>${maven-compiler-plugin.version}</version>
+				<version>3.8.1</version>
 				<configuration>
-					<source>${java.version}</source>
-					<target>${java.version}</target>
+					<source>1.8</source>
+					<target>1.8</target>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -135,14 +128,14 @@
 				</executions>
 			</plugin>
 			<plugin>
-				<groupId>org.sonatype.plugins</groupId>
-				<artifactId>nexus-staging-maven-plugin</artifactId>
-				<version>1.6.13</version>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-deploy-plugin</artifactId>
+				<version>3.2.0</version>
 				<extensions>true</extensions>
 				<configuration>
-					<serverId>ossrh</serverId>
-					<nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
-					<autoReleaseAfterClose>true</autoReleaseAfterClose>
+					<serverId>central</serverId>
+					<url>https://central.sonatype.com/repository/repositories/releases/</url>
+					<skipRemoteStaging>true</skipRemoteStaging>
 				</configuration>
 			</plugin>
 		</plugins>
@@ -150,14 +143,14 @@
 
 	<distributionManagement>
 		<repository>
-			<id>ossrh</id>
-			<name>OSSRH Release Repository</name>
-			<url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+			<id>central</id>
+			<name>Central Portal Release Repository</name>
+			<url>https://central.sonatype.com/repository/repositories/releases/</url>
 		</repository>
 		<snapshotRepository>
-			<id>ossrh</id>
-			<name>OSSRH Snapshot Repository</name>
-			<url>https://s01.oss.sonatype.org/content/repositories/snapshots/</url>
+			<id>central</id>
+			<name>Central Portal Snapshot Repository</name>
+			<url>https://central.sonatype.com/repository/repositories/snapshots/</url>
 		</snapshotRepository>
 	</distributionManagement>
 
